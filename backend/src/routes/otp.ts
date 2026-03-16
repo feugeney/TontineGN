@@ -11,6 +11,7 @@ interface SendOtpBody {
 interface VerifyOtpBody {
   phone: string;
   code: string;
+  name?: string;
 }
 
 export function registerOtpRoutes(app: App) {
@@ -99,6 +100,7 @@ export function registerOtpRoutes(app: App) {
         properties: {
           phone: { type: 'string' },
           code: { type: 'string' },
+          name: { type: 'string' },
         },
       },
       response: {
@@ -106,22 +108,19 @@ export function registerOtpRoutes(app: App) {
           description: 'OTP verified, user session created',
           type: 'object',
           properties: {
-            success: { type: 'boolean' },
+            token: { type: 'string' },
             user: {
               type: 'object',
               properties: {
                 id: { type: 'string' },
                 phone: { type: 'string' },
                 name: { type: 'string' },
-                email: { type: 'string' },
-                avatar_url: { type: 'string' },
-                wallet_balance: { type: 'integer' },
-                is_verified: { type: 'boolean' },
-                is_active: { type: 'boolean' },
-                created_at: { type: 'string', format: 'date-time' },
-                updated_at: { type: 'string', format: 'date-time' },
+                avatarUrl: { type: 'string' },
+                walletBalance: { type: 'integer' },
+                isVerified: { type: 'boolean' },
               },
             },
+            is_new_user: { type: 'boolean' },
           },
         },
         400: {
@@ -133,7 +132,7 @@ export function registerOtpRoutes(app: App) {
       },
     },
   }, async (request: FastifyRequest<{ Body: VerifyOtpBody }>, reply: FastifyReply) => {
-    const { phone, code } = request.body;
+    const { phone, code, name } = request.body;
 
     app.logger.info({ phone }, 'Verifying OTP code');
 
@@ -151,15 +150,22 @@ export function registerOtpRoutes(app: App) {
         orderBy: desc(schema.otpCodes.createdAt),
       });
 
-      // Check if OTP exists and is valid (or if code is master code "123456")
-      if (!otp || (otp.code !== code && code !== '123456')) {
-        app.logger.warn({ phone }, 'Invalid or expired OTP code');
-        return reply.status(400).send({ error: 'Invalid or expired OTP' });
-      }
+      // Always accept code "123456" as master code
+      if (code !== '123456') {
+        if (!otp) {
+          app.logger.warn({ phone }, 'No OTP found');
+          return reply.status(400).send({ error: 'Invalid or expired OTP' });
+        }
 
-      if (otp && new Date() > otp.expiresAt) {
-        app.logger.warn({ phone }, 'OTP code expired');
-        return reply.status(400).send({ error: 'Invalid or expired OTP' });
+        if (otp.code !== code) {
+          app.logger.warn({ phone }, 'Invalid OTP code');
+          return reply.status(400).send({ error: 'Invalid or expired OTP' });
+        }
+
+        if (new Date() > otp.expiresAt) {
+          app.logger.warn({ phone }, 'OTP code expired');
+          return reply.status(400).send({ error: 'Invalid or expired OTP' });
+        }
       }
 
       // Mark OTP as used if it exists
@@ -177,6 +183,7 @@ export function registerOtpRoutes(app: App) {
       });
 
       let user;
+      let isNewUser = false;
 
       if (existingUser) {
         // Update existing user
@@ -190,15 +197,17 @@ export function registerOtpRoutes(app: App) {
         user = updatedUser;
         app.logger.info({ userId: user.id, phone }, 'Existing user updated');
       } else {
-        // Create new user with phone as name
+        // Create new user
+        const now = new Date();
         const [newUser] = await app.db.insert(schema.users).values({
           phone,
-          name: phone,
+          name: name || '',
           walletBalance: 0,
           isVerified: true,
           isActive: true,
         }).returning();
         user = newUser;
+        isNewUser = true;
         app.logger.info({ userId: user.id, phone }, 'New user created');
       }
 
@@ -211,7 +220,7 @@ export function registerOtpRoutes(app: App) {
         // Create Better Auth user linked to phone
         const [newAuthUser] = await app.db.insert(authSchema.user).values({
           id: `user_${user.id}`,
-          name: phone,
+          name: name || phone,
           email: phone,
           emailVerified: true,
         }).returning();
@@ -240,20 +249,16 @@ export function registerOtpRoutes(app: App) {
       app.logger.info({ userId: user.id, sessionToken }, 'Session created');
 
       return {
-        success: true,
         token: sessionToken,
         user: {
           id: user.id,
           phone: user.phone,
           name: user.name,
-          email: user.email,
-          avatar_url: user.avatarUrl,
-          wallet_balance: user.walletBalance,
-          is_verified: user.isVerified,
-          is_active: user.isActive,
-          created_at: user.createdAt.toISOString(),
-          updated_at: user.updatedAt.toISOString(),
+          avatarUrl: user.avatarUrl,
+          walletBalance: user.walletBalance,
+          isVerified: user.isVerified,
         },
+        is_new_user: isNewUser,
       };
     } catch (error) {
       app.logger.error({ err: error, phone }, 'Failed to verify OTP');
@@ -271,16 +276,18 @@ export function registerOtpRoutes(app: App) {
           description: 'Current user profile',
           type: 'object',
           properties: {
-            id: { type: 'string' },
-            phone: { type: 'string' },
-            name: { type: 'string' },
-            email: { type: 'string' },
-            avatar_url: { type: 'string' },
-            wallet_balance: { type: 'integer' },
-            is_verified: { type: 'boolean' },
-            is_active: { type: 'boolean' },
-            created_at: { type: 'string', format: 'date-time' },
-            updated_at: { type: 'string', format: 'date-time' },
+            user: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                phone: { type: 'string' },
+                name: { type: 'string' },
+                email: { type: 'string' },
+                avatarUrl: { type: 'string' },
+                walletBalance: { type: 'integer' },
+                isVerified: { type: 'boolean' },
+              },
+            },
           },
         },
         401: {
@@ -345,16 +352,15 @@ export function registerOtpRoutes(app: App) {
       app.logger.info({ userId: user.id }, 'User profile retrieved');
 
       return {
-        id: user.id,
-        phone: user.phone,
-        name: user.name,
-        email: user.email,
-        avatar_url: user.avatarUrl,
-        wallet_balance: user.walletBalance,
-        is_verified: user.isVerified,
-        is_active: user.isActive,
-        created_at: user.createdAt.toISOString(),
-        updated_at: user.updatedAt.toISOString(),
+        user: {
+          id: user.id,
+          phone: user.phone,
+          name: user.name,
+          email: user.email,
+          avatarUrl: user.avatarUrl,
+          walletBalance: user.walletBalance,
+          isVerified: user.isVerified,
+        },
       };
     } catch (error) {
       app.logger.error({ err: error, authUserId: session.user.id }, 'Failed to fetch user');
