@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Natively App",
-    "slug": "natively-app",
+    "name": "act-as-a-senior-fint",
+    "slug": "act-as-a-senior-fint",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/app-icon-edm.png",
@@ -35,7 +35,7 @@
       "expo-web-browser",
       "expo-secure-store"
     ],
-    "scheme": "nativelyapp",
+    "scheme": "actasaseniorfint",
     "experiments": {
       "typedRoutes": true
     },
