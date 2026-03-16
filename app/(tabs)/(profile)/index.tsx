@@ -91,6 +91,43 @@ export default function ProfileScreen() {
   const phone = user?.phone ? formatPhone(user.phone) : "";
   const verified = user?.isVerified;
 
+  const sections = [
+    {
+      title: "Compte",
+      items: [
+        { icon: User, label: "Modifier le profil", onPress: () => console.log("[Profile] Edit profile") },
+        { icon: Lock, label: "Changer le PIN", onPress: () => console.log("[Profile] Change PIN") },
+        { icon: Bell, label: "Notifications", onPress: () => { console.log("[Nav] Navigating to notifications"); router.push("/notifications"); } },
+      ],
+    },
+    {
+      title: "Sécurité",
+      items: [
+        {
+          icon: Fingerprint,
+          label: "Biométrie",
+          right: (
+            <Switch
+              value={biometrics}
+              onValueChange={(v) => { console.log("[Profile] Biometrics toggled:", v); setBiometrics(v); }}
+              trackColor={{ false: COLORS.surfaceSecondary, true: COLORS.primary }}
+              thumbColor="#FFFFFF"
+            />
+          ),
+        },
+        { icon: LogOut, label: "Déconnexion", onPress: handleLogout, danger: true },
+      ],
+    },
+    {
+      title: "À propos",
+      items: [
+        { icon: Info, label: "Version 1.0.0", onPress: () => {} },
+        { icon: FileText, label: "Conditions d'utilisation", onPress: () => console.log("[Profile] Terms") },
+        { icon: Shield, label: "Politique de confidentialité", onPress: () => console.log("[Profile] Privacy") },
+      ],
+    },
+  ];
+
   return (
     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
       <ScrollView contentContainerStyle={{ paddingBottom: 120 }} showsVerticalScrollIndicator={false}>
@@ -138,42 +175,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* Settings sections */}
-        {[
-          {
-            title: "Compte",
-            items: [
-              { icon: User, label: "Modifier le profil", onPress: () => console.log("[Profile] Edit profile") },
-              { icon: Lock, label: "Changer le PIN", onPress: () => console.log("[Profile] Change PIN") },
-              { icon: Bell, label: "Notifications", onPress: () => { console.log("[Nav] Navigating to notifications"); router.push("/notifications"); } },
-            ],
-          },
-          {
-            title: "Sécurité",
-            items: [
-              {
-                icon: Fingerprint,
-                label: "Biométrie",
-                right: (
-                  <Switch
-                    value={biometrics}
-                    onValueChange={(v) => { console.log("[Profile] Biometrics toggled:", v); setBiometrics(v); }}
-                    trackColor={{ false: COLORS.surfaceSecondary, true: COLORS.primary }}
-                    thumbColor="#FFFFFF"
-                  />
-                ),
-              },
-              { icon: LogOut, label: "Déconnexion", onPress: handleLogout, danger: true },
-            ],
-          },
-          {
-            title: "À propos",
-            items: [
-              { icon: Info, label: "Version 1.0.0", onPress: () => {} },
-              { icon: FileText, label: "Conditions d'utilisation", onPress: () => console.log("[Profile] Terms") },
-              { icon: Shield, label: "Politique de confidentialité", onPress: () => console.log("[Profile] Privacy") },
-            ],
-          },
-        ].map((section) => (
+        {sections.map((section) => (
           <View key={section.title} style={{ paddingHorizontal: 20, marginBottom: 20 }}>
             <Text style={{ fontSize: 11, fontWeight: "700", color: COLORS.textTertiary, fontFamily: "Nunito_700Bold", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 8, paddingLeft: 4 }}>
               {section.title}
