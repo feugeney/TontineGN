@@ -94,6 +94,14 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 400);
   });
 
+  test("Set PIN with invalid length returns 400", async () => {
+    const res = await authenticatedApi("/api/users/set-pin", authToken, {
+      method: "POST",
+      body: JSON.stringify({ pin: "12" })
+    });
+    await expectStatus(res, 400);
+  });
+
   // ========== Wallet Endpoints ==========
   test("Get wallet balance", async () => {
     const res = await authenticatedApi("/api/wallet/balance", authToken);
@@ -143,6 +151,18 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 400);
   });
 
+  test("Deposit with invalid payment method returns 400", async () => {
+    const res = await authenticatedApi("/api/wallet/deposit", authToken, {
+      method: "POST",
+      body: JSON.stringify({
+        amount: 1000,
+        paymentMethod: "invalid_method",
+        phoneNumber: "+237671234567"
+      })
+    });
+    await expectStatus(res, 400);
+  });
+
   test("Get wallet transactions", async () => {
     const res = await authenticatedApi("/api/wallet/transactions", authToken);
     await expectStatus(res, 200);
@@ -165,7 +185,7 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 401);
   });
 
-  test("Withdraw from wallet", async () => {
+  test("Withdraw from wallet with valid PIN", async () => {
     const res = await authenticatedApi("/api/wallet/withdraw", authToken, {
       method: "POST",
       body: JSON.stringify({
@@ -176,8 +196,7 @@ describe("API Integration Tests", () => {
       })
     });
     // May succeed or fail depending on balance/validation, but should not be 401
-    const status = res.status;
-    expect([200, 400, 409].includes(status)).toBe(true);
+    await expectStatus(res, 200, 400, 409);
   });
 
   test("Withdraw without authentication returns 401", async () => {
@@ -212,8 +231,7 @@ describe("API Integration Tests", () => {
       })
     });
     // May succeed or fail depending on recipient/balance, but should not be 401
-    const status = res.status;
-    expect([200, 400, 404, 409].includes(status)).toBe(true);
+    await expectStatus(res, 200, 400, 404, 409);
   });
 
   test("Send money without authentication returns 401", async () => {
@@ -304,6 +322,11 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 404);
   });
 
+  test("Get group with invalid UUID format returns 400", async () => {
+    const res = await authenticatedApi(`/api/groups/invalid-uuid`, authToken);
+    await expectStatus(res, 400);
+  });
+
   test("Get group without authentication returns 401", async () => {
     const res = await api(`/api/groups/${groupId}`);
     await expectStatus(res, 401);
@@ -327,8 +350,7 @@ describe("API Integration Tests", () => {
       method: "POST"
     });
     // May return 200 if not already member, or other status if already member
-    const status = res.status;
-    expect([200, 409, 400].includes(status)).toBe(true);
+    await expectStatus(res, 200, 400, 409);
   });
 
   test("Join non-existent group returns 404", async () => {
@@ -357,8 +379,7 @@ describe("API Integration Tests", () => {
       })
     });
     // May succeed or fail depending on group state, but should not be 401
-    const status = res.status;
-    expect([201, 400, 409].includes(status)).toBe(true);
+    await expectStatus(res, 201, 400, 409);
   });
 
   test("Create contribution without authentication returns 401", async () => {

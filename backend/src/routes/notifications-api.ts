@@ -32,9 +32,24 @@ export function registerNotificationRoutes(app: App) {
       userId = session.user.id.substring(5);
     } else if (session.user.email) {
       // Better Auth users: look up by email
-      const user = await app.db.query.users.findFirst({
+      let user = await app.db.query.users.findFirst({
         where: eq(schema.users.email, session.user.email),
       });
+
+      // Create custom user from Better Auth data if needed
+      if (!user) {
+        const [newUser] = await app.db.insert(schema.users).values({
+          phone: '',
+          name: session.user.name || 'User',
+          email: session.user.email,
+          avatarUrl: session.user.image,
+          walletBalance: 0,
+          isVerified: true,
+          isActive: true,
+        }).returning();
+        user = newUser;
+      }
+
       userId = user?.id || null;
     }
 
@@ -52,7 +67,7 @@ export function registerNotificationRoutes(app: App) {
 
       return {
         notifications: notifications.map((n: any) => ({
-          id: n.id,
+          id: String(n.id),
           title: n.title,
           body: n.body,
           type: n.type,
@@ -87,9 +102,37 @@ export function registerNotificationRoutes(app: App) {
     const session = await requireAuth(request, reply);
     if (!session) return;
 
-    const userId = session.user.id.startsWith('user_')
-      ? session.user.id.substring(5)
-      : session.user.id;
+    let userId: string | null = null;
+
+    // OTP users: auth user ID format is "user_<uuid>"
+    if (session.user.id.startsWith('user_')) {
+      userId = session.user.id.substring(5);
+    } else if (session.user.email) {
+      // Better Auth users: look up by email
+      let user = await app.db.query.users.findFirst({
+        where: eq(schema.users.email, session.user.email),
+      });
+
+      // Create custom user from Better Auth data if needed
+      if (!user) {
+        const [newUser] = await app.db.insert(schema.users).values({
+          phone: '',
+          name: session.user.name || 'User',
+          email: session.user.email,
+          avatarUrl: session.user.image,
+          walletBalance: 0,
+          isVerified: true,
+          isActive: true,
+        }).returning();
+        user = newUser;
+      }
+
+      userId = user?.id || null;
+    }
+
+    if (!userId) {
+      return reply.status(401).send({ error: 'User not found' });
+    }
 
     const { id } = request.params;
 

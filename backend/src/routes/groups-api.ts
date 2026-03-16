@@ -55,9 +55,24 @@ export function registerGroupRoutes(app: App) {
       userId = session.user.id.substring(5);
     } else if (session.user.email) {
       // Better Auth users: look up by email
-      const user = await app.db.query.users.findFirst({
+      let user = await app.db.query.users.findFirst({
         where: eq(schema.users.email, session.user.email),
       });
+
+      // Create custom user from Better Auth data if needed
+      if (!user) {
+        const [newUser] = await app.db.insert(schema.users).values({
+          phone: '',
+          name: session.user.name || 'User',
+          email: session.user.email,
+          avatarUrl: session.user.image,
+          walletBalance: 0,
+          isVerified: true,
+          isActive: true,
+        }).returning();
+        user = newUser;
+      }
+
       userId = user?.id || null;
     }
 
@@ -83,6 +98,8 @@ export function registerGroupRoutes(app: App) {
         status: 'active',
       }).returning();
 
+      app.logger.info({ groupId: String(group?.id), userId }, 'Group created');
+
       // Add creator as admin member
       await app.db.insert(schema.groupMembers).values({
         groupId: group.id as any,
@@ -91,11 +108,9 @@ export function registerGroupRoutes(app: App) {
         hasReceivedPayout: false,
       });
 
-      app.logger.info({ groupId: group.id, userId }, 'Group created');
-
-      return reply.status(201).send({
+      const responseData = {
         group: {
-          id: group.id,
+          id: String(group.id),
           name: group.name,
           description: group.description,
           contributionAmount: group.contributionAmount,
@@ -103,11 +118,14 @@ export function registerGroupRoutes(app: App) {
           maxMembers: group.maxMembers,
           startDate: group.startDate?.toISOString(),
           penaltyAmount: Number(group.penaltyRate),
-          adminId: group.createdBy,
+          adminId: String(group.createdBy),
           status: group.status,
           memberCount: 1,
         },
-      });
+      };
+
+      reply.status(201);
+      return responseData;
     } catch (error) {
       app.logger.error({ err: error }, 'Failed to create group');
       return reply.status(400).send({ error: 'Failed to create group' });
@@ -140,9 +158,24 @@ export function registerGroupRoutes(app: App) {
       userId = session.user.id.substring(5);
     } else if (session.user.email) {
       // Better Auth users: look up by email
-      const user = await app.db.query.users.findFirst({
+      let user = await app.db.query.users.findFirst({
         where: eq(schema.users.email, session.user.email),
       });
+
+      // Create custom user from Better Auth data if needed
+      if (!user) {
+        const [newUser] = await app.db.insert(schema.users).values({
+          phone: '',
+          name: session.user.name || 'User',
+          email: session.user.email,
+          avatarUrl: session.user.image,
+          walletBalance: 0,
+          isVerified: true,
+          isActive: true,
+        }).returning();
+        user = newUser;
+      }
+
       userId = user?.id || null;
     }
 
@@ -178,7 +211,7 @@ export function registerGroupRoutes(app: App) {
             where: eq(schema.groupMembers.groupId, g.id as any),
           });
           return {
-            id: g.id,
+            id: String(g.id),
             name: g.name,
             description: g.description,
             contributionAmount: g.contributionAmount,
@@ -186,7 +219,7 @@ export function registerGroupRoutes(app: App) {
             maxMembers: g.maxMembers,
             startDate: g.startDate?.toISOString(),
             penaltyAmount: Number(g.penaltyRate),
-            adminId: g.createdBy,
+            adminId: String(g.createdBy),
             status: g.status,
             memberCount: members.length,
           };
@@ -239,7 +272,7 @@ export function registerGroupRoutes(app: App) {
 
       return {
         group: {
-          id: group.id,
+          id: String(group.id),
           name: group.name,
           description: group.description,
           contributionAmount: group.contributionAmount,
@@ -247,7 +280,7 @@ export function registerGroupRoutes(app: App) {
           maxMembers: group.maxMembers,
           startDate: group.startDate?.toISOString(),
           penaltyAmount: Number(group.penaltyRate),
-          adminId: group.createdBy,
+          adminId: String(group.createdBy),
           status: group.status,
           memberCount: members.length,
         },
@@ -286,9 +319,24 @@ export function registerGroupRoutes(app: App) {
       userId = session.user.id.substring(5);
     } else if (session.user.email) {
       // Better Auth users: look up by email
-      const user = await app.db.query.users.findFirst({
+      let user = await app.db.query.users.findFirst({
         where: eq(schema.users.email, session.user.email),
       });
+
+      // Create custom user from Better Auth data if needed
+      if (!user) {
+        const [newUser] = await app.db.insert(schema.users).values({
+          phone: '',
+          name: session.user.name || 'User',
+          email: session.user.email,
+          avatarUrl: session.user.image,
+          walletBalance: 0,
+          isVerified: true,
+          isActive: true,
+        }).returning();
+        user = newUser;
+      }
+
       userId = user?.id || null;
     }
 
@@ -367,7 +415,7 @@ export function registerGroupRoutes(app: App) {
             where: eq(schema.users.id, m.userId as any),
           });
           return {
-            id: m.userId,
+            id: String(m.userId),
             name: user?.name || 'Unknown',
             phone: user?.phone || '',
             avatar_url: user?.avatarUrl,

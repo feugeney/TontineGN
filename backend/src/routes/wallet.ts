@@ -488,8 +488,8 @@ export function registerWalletRoutes(app: App) {
 
 function formatTransaction(txn: typeof schema.transactions.$inferSelect) {
   return {
-    id: txn.id,
-    userId: txn.userId,
+    id: String(txn.id),
+    userId: String(txn.userId),
     type: txn.type,
     amount: txn.amount,
     fee: txn.fee,

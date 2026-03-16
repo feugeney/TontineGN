@@ -15,23 +15,36 @@ interface SetPINBody {
 }
 
 // Helper function to ensure a user exists in our users table
-export async function ensureUserExists(app: App, userId: string, userData: any) {
-  let user = await app.db.query.users.findFirst({
-    where: eq(schema.users.id, userId),
-  });
+export async function ensureUserExists(app: App, authUserId: string, userData: any) {
+  let user: any = null;
 
-  if (!user) {
-    const [newUser] = await app.db.insert(schema.users).values({
-      id: userId as any,
-      phone: '',
-      name: userData.name || 'User',
-      email: userData.email,
-      avatarUrl: userData.image,
-      walletBalance: 0,
-      isVerified: userData.emailVerified || false,
-      isActive: true,
-    }).returning();
-    user = newUser;
+  // OTP users: auth user ID format is "user_<uuid>"
+  if (authUserId.startsWith('user_')) {
+    const customUserId = authUserId.substring(5);
+    user = await app.db.query.users.findFirst({
+      where: eq(schema.users.id, customUserId),
+    });
+  }
+
+  // Better Auth users: look up by email
+  if (!user && userData.email) {
+    user = await app.db.query.users.findFirst({
+      where: eq(schema.users.email, userData.email),
+    });
+
+    // Create custom user from Better Auth data if needed
+    if (!user) {
+      const [newUser] = await app.db.insert(schema.users).values({
+        phone: userData.phone || '',
+        name: userData.name || 'User',
+        email: userData.email,
+        avatarUrl: userData.image,
+        walletBalance: 0,
+        isVerified: userData.emailVerified || false,
+        isActive: true,
+      }).returning();
+      user = newUser;
+    }
   }
 
   return user;

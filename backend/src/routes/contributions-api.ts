@@ -36,9 +36,37 @@ export function registerContributionRoutes(app: App) {
     const session = await requireAuth(request, reply);
     if (!session) return;
 
-    const userId = session.user.id.startsWith('user_')
-      ? session.user.id.substring(5)
-      : session.user.id;
+    let userId: string | null = null;
+
+    // OTP users: auth user ID format is "user_<uuid>"
+    if (session.user.id.startsWith('user_')) {
+      userId = session.user.id.substring(5);
+    } else if (session.user.email) {
+      // Better Auth users: look up by email
+      let user = await app.db.query.users.findFirst({
+        where: eq(schema.users.email, session.user.email),
+      });
+
+      // Create custom user from Better Auth data if needed
+      if (!user) {
+        const [newUser] = await app.db.insert(schema.users).values({
+          phone: '',
+          name: session.user.name || 'User',
+          email: session.user.email,
+          avatarUrl: session.user.image,
+          walletBalance: 0,
+          isVerified: true,
+          isActive: true,
+        }).returning();
+        user = newUser;
+      }
+
+      userId = user?.id || null;
+    }
+
+    if (!userId) {
+      return reply.status(400).send({ error: 'User not found' });
+    }
 
     const { groupId, amount, paymentMethod } = request.body;
 
@@ -83,17 +111,18 @@ export function registerContributionRoutes(app: App) {
 
       app.logger.info({ contributionId: contribution.id }, 'Contribution created');
 
-      return reply.status(201).send({
+      reply.status(201);
+      return {
         contribution: {
-          id: contribution.id,
-          groupId: contribution.groupId,
-          userId: contribution.userId,
+          id: String(contribution.id),
+          groupId: String(contribution.groupId),
+          userId: String(contribution.userId),
           amount: contribution.amount,
           paymentMethod: contribution.paymentMethod,
           status: contribution.status,
           createdAt: contribution.createdAt.toISOString(),
         },
-      });
+      };
     } catch (error) {
       app.logger.error({ err: error }, 'Failed to create contribution');
       return reply.status(400).send({ error: 'Failed to create contribution' });
@@ -141,9 +170,9 @@ export function registerContributionRoutes(app: App) {
             where: eq(schema.users.id, c.userId as any),
           });
           return {
-            id: c.id,
-            groupId: c.groupId,
-            userId: c.userId,
+            id: String(c.id),
+            groupId: String(c.groupId),
+            userId: String(c.userId),
             amount: c.amount,
             paymentMethod: c.paymentMethod,
             status: c.status,
