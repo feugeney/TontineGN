@@ -78,8 +78,22 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
+  const [displayBalance, setDisplayBalance] = useState(0);
   const balanceAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const balance = Number(user?.walletBalance) || 0;
+    const listener = balanceAnim.addListener(({ value }) => {
+      setDisplayBalance(Math.round(value));
+    });
+    Animated.timing(balanceAnim, {
+      toValue: balance,
+      duration: 1200,
+      useNativeDriver: false,
+    }).start();
+    return () => balanceAnim.removeListener(listener);
+  }, [user?.walletBalance]);
 
   const loadData = async () => {
     try {
@@ -94,8 +108,6 @@ export default function HomeScreen() {
       setError("");
 
       Animated.timing(fadeAnim, { toValue: 1, duration: 300, useNativeDriver: true }).start();
-      const balance = Number(user?.walletBalance) || 0;
-      Animated.timing(balanceAnim, { toValue: balance, duration: 1200, useNativeDriver: false }).start();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Erreur de chargement";
       setError(msg);
@@ -120,12 +132,6 @@ export default function HomeScreen() {
   };
 
   const userName = user?.name?.split(" ")[0] || "Utilisateur";
-  const balance = Number(user?.walletBalance) || 0;
-
-  const balanceDisplay = balanceAnim.interpolate({
-    inputRange: [0, balance || 1],
-    outputRange: ["0", formatGNF(balance || 0)],
-  });
 
   const txIcon = (type: string) => {
     if (type === "deposit" || type === "credit" || type === "payout") return { bg: "rgba(34,197,94,0.12)", color: COLORS.success };
@@ -237,7 +243,7 @@ export default function HomeScreen() {
             >
               Solde disponible
             </Text>
-            <Animated.Text
+            <Text
               style={{
                 color: "#FFFFFF",
                 fontSize: 32,
@@ -247,8 +253,8 @@ export default function HomeScreen() {
                 marginBottom: 20,
               }}
             >
-              {formatGNF(balance)}
-            </Animated.Text>
+              {formatGNF(displayBalance)}
+            </Text>
             <View style={{ flexDirection: "row", gap: 12 }}>
               <AnimatedPressable
                 onPress={() => {
