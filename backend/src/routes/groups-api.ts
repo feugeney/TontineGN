@@ -98,7 +98,7 @@ export function registerGroupRoutes(app: App) {
         status: 'active',
       }).returning();
 
-      app.logger.info({ groupId: String(group?.id), userId }, 'Group created');
+      app.logger.info({ groupObj: JSON.stringify(group), groupId: group?.id, userId }, 'Group created from DB');
 
       // Add creator as admin member
       await app.db.insert(schema.groupMembers).values({
@@ -124,7 +124,7 @@ export function registerGroupRoutes(app: App) {
         },
       };
 
-      reply.status(201);
+      reply.code(201);
       return responseData;
     } catch (error) {
       app.logger.error({ err: error }, 'Failed to create group');

@@ -2,7 +2,8 @@ import { pgTable, text, timestamp, uuid, boolean, integer, numeric, json } from 
 
 export const otpCodes = pgTable('otp_codes', {
   id: uuid('id').primaryKey().defaultRandom(),
-  phone: text('phone').notNull(),
+  phone: text('phone'),
+  email: text('email'),
   code: text('code').notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   used: boolean('used').notNull().default(false),

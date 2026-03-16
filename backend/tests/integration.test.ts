@@ -55,6 +55,25 @@ describe("API Integration Tests", () => {
     await expectStatus(res, 401);
   });
 
+  test("Get user statistics", async () => {
+    const res = await authenticatedApi("/api/users/me/stats", authToken);
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data.total_groups).toBeDefined();
+    expect(typeof data.total_groups).toBe("number");
+    expect(data.total_contributions).toBeDefined();
+    expect(typeof data.total_contributions).toBe("number");
+    expect(data.total_contributed_amount).toBeDefined();
+    expect(typeof data.total_contributed_amount).toBe("number");
+    expect(data.wallet_balance).toBeDefined();
+    expect(typeof data.wallet_balance).toBe("number");
+  });
+
+  test("Get user statistics without authentication returns 401", async () => {
+    const res = await api("/api/users/me/stats");
+    await expectStatus(res, 401);
+  });
+
   test("Search users by phone", async () => {
     const res = await authenticatedApi("/api/users/search?phone=%2B237", authToken);
     await expectStatus(res, 200);
@@ -416,6 +435,19 @@ describe("API Integration Tests", () => {
     const data = await res.json();
     expect(data.contributions).toBeDefined();
     expect(Array.isArray(data.contributions)).toBe(true);
+  });
+
+  test("Get upcoming contributions", async () => {
+    const res = await authenticatedApi("/api/contributions/upcoming", authToken);
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data.contributions).toBeDefined();
+    expect(Array.isArray(data.contributions)).toBe(true);
+  });
+
+  test("Get upcoming contributions without authentication returns 401", async () => {
+    const res = await api("/api/contributions/upcoming");
+    await expectStatus(res, 401);
   });
 
   test("Get contributions without authentication returns 401", async () => {

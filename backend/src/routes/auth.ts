@@ -5,26 +5,28 @@ import * as schema from '../db/schema/schema.js';
 import * as authSchema from '../db/schema/auth-schema.js';
 
 interface SendOtpBody {
-  phone: string;
+  phone?: string;
+  email?: string;
 }
 
 interface VerifyOtpBody {
-  phone: string;
+  phone?: string;
+  email?: string;
   code: string;
   name?: string;
 }
 
 export function registerAuthRoutes(app: App) {
-  // POST /api/send-otp
-  app.fastify.post('/api/send-otp', {
+  // POST /api/otp-auth/send-otp
+  app.fastify.post('/api/otp-auth/send-otp', {
     schema: {
-      description: 'Send OTP code to phone number',
+      description: 'Send OTP code to phone or email',
       tags: ['auth'],
       body: {
         type: 'object',
-        required: ['phone'],
         properties: {
           phone: { type: 'string' },
+          email: { type: 'string' },
         },
       },
       response: {
@@ -33,7 +35,7 @@ export function registerAuthRoutes(app: App) {
           properties: {
             success: { type: 'boolean' },
             message: { type: 'string' },
-            expires_in: { type: 'integer' },
+            otp_code: { type: 'string' },
           },
         },
         400: {
@@ -45,55 +47,67 @@ export function registerAuthRoutes(app: App) {
       },
     },
   }, async (request: FastifyRequest<{ Body: SendOtpBody }>, reply: FastifyReply) => {
-    const { phone } = request.body;
-    app.logger.info({ phone }, 'Sending OTP code');
+    const { phone, email } = request.body;
+    app.logger.info({ phone, email }, 'Sending OTP code');
 
     try {
-      if (!phone) {
-        return reply.status(400).send({ error: 'Phone number is required' });
+      if (!phone && !email) {
+        return reply.status(400).send({ error: 'Phone or email is required' });
       }
 
-      // Delete existing unused OTP codes
-      await app.db.delete(schema.otpCodes)
-        .where(and(
-          eq(schema.otpCodes.phone, phone),
-          eq(schema.otpCodes.used, false)
-        ));
-
-      // Insert new OTP with hardcoded value
-      const code = '123456';
+      // Generate 6-digit OTP code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
+      // Delete existing unused OTP codes
+      if (phone) {
+        await app.db.delete(schema.otpCodes)
+          .where(and(
+            eq(schema.otpCodes.phone, phone),
+            eq(schema.otpCodes.used, false)
+          ));
+      }
+      if (email) {
+        await app.db.delete(schema.otpCodes)
+          .where(and(
+            eq(schema.otpCodes.email, email),
+            eq(schema.otpCodes.used, false)
+          ));
+      }
+
+      // Insert new OTP
       await app.db.insert(schema.otpCodes).values({
-        phone,
+        phone: phone || null,
+        email: email || null,
         code,
         expiresAt,
         used: false,
       });
 
-      app.logger.info({ phone }, 'OTP code sent');
+      app.logger.info({ phone, email }, 'OTP code sent');
 
       return {
         success: true,
         message: 'Code envoyé',
-        expires_in: 600,
+        otp_code: code,
       };
     } catch (error) {
-      app.logger.error({ err: error, phone }, 'Failed to send OTP');
+      app.logger.error({ err: error, phone, email }, 'Failed to send OTP');
       return reply.status(400).send({ error: 'Failed to send OTP' });
     }
   });
 
-  // POST /api/verify-otp
-  app.fastify.post('/api/verify-otp', {
+  // POST /api/otp-auth/verify-otp
+  app.fastify.post('/api/otp-auth/verify-otp', {
     schema: {
       description: 'Verify OTP code and authenticate user',
       tags: ['auth'],
       body: {
         type: 'object',
-        required: ['phone', 'code'],
+        required: ['code'],
         properties: {
           phone: { type: 'string' },
+          email: { type: 'string' },
           code: { type: 'string' },
           name: { type: 'string' },
         },
@@ -126,77 +140,107 @@ export function registerAuthRoutes(app: App) {
       },
     },
   }, async (request: FastifyRequest<{ Body: VerifyOtpBody }>, reply: FastifyReply) => {
-    const { phone, code, name } = request.body;
-    app.logger.info({ phone }, 'Verifying OTP code');
+    const { phone, email, code, name } = request.body;
+    app.logger.info({ phone, email }, 'Verifying OTP code');
 
     try {
-      if (!phone || !code) {
-        return reply.status(400).send({ error: 'Phone and code are required' });
+      if (!phone && !email || !code) {
+        return reply.status(400).send({ error: 'Phone or email and code are required' });
       }
 
-      // Always accept "123456" as valid code
-      if (code !== '123456') {
-        return reply.status(400).send({ error: 'Invalid code' });
-      }
-
-      // Find and mark OTP as used if it exists
+      // Verify OTP code
       const otp = await app.db.query.otpCodes.findFirst({
         where: and(
-          eq(schema.otpCodes.phone, phone),
+          phone ? eq(schema.otpCodes.phone, phone) : eq(schema.otpCodes.email, email!),
+          eq(schema.otpCodes.code, code),
           eq(schema.otpCodes.used, false)
         ),
         orderBy: desc(schema.otpCodes.createdAt),
       });
 
-      if (otp) {
-        await app.db.update(schema.otpCodes)
-          .set({ used: true })
-          .where(eq(schema.otpCodes.id, otp.id));
+      if (!otp || otp.expiresAt < new Date()) {
+        return reply.status(400).send({ error: 'OTP invalide ou expiré' });
       }
 
-      app.logger.info({ phone }, 'OTP code verified');
+      // Mark OTP as used
+      await app.db.update(schema.otpCodes)
+        .set({ used: true })
+        .where(eq(schema.otpCodes.id, otp.id));
 
-      // Upsert user
-      const existingUser = await app.db.query.users.findFirst({
-        where: eq(schema.users.phone, phone),
-      });
+      app.logger.info({ phone, email }, 'OTP code verified');
 
+      // Find or create user
       let user;
       let isNewUser = false;
 
-      if (existingUser) {
-        const [updatedUser] = await app.db.update(schema.users)
-          .set({
+      if (phone) {
+        const existingUser = await app.db.query.users.findFirst({
+          where: eq(schema.users.phone, phone),
+        });
+
+        if (existingUser) {
+          const [updatedUser] = await app.db.update(schema.users)
+            .set({
+              isVerified: true,
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.users.phone, phone))
+            .returning();
+          user = updatedUser;
+          app.logger.info({ userId: user.id }, 'Existing user verified');
+        } else {
+          const [newUser] = await app.db.insert(schema.users).values({
+            phone,
+            name: name || 'Utilisateur',
+            walletBalance: 0,
             isVerified: true,
-            updatedAt: new Date(),
-          })
-          .where(eq(schema.users.phone, phone))
-          .returning();
-        user = updatedUser;
-        app.logger.info({ userId: user.id }, 'Existing user verified');
-      } else {
-        const [newUser] = await app.db.insert(schema.users).values({
-          phone,
-          name: name || 'Utilisateur',
-          walletBalance: 0,
-          isVerified: true,
-          isActive: true,
-        }).returning();
-        user = newUser;
-        isNewUser = true;
-        app.logger.info({ userId: user.id }, 'New user created');
+            isActive: true,
+          }).returning();
+          user = newUser;
+          isNewUser = true;
+          app.logger.info({ userId: user.id }, 'New user created');
+        }
+      } else if (email) {
+        const existingUser = await app.db.query.users.findFirst({
+          where: eq(schema.users.email, email),
+        });
+
+        if (existingUser) {
+          const [updatedUser] = await app.db.update(schema.users)
+            .set({
+              isVerified: true,
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.users.email, email))
+            .returning();
+          user = updatedUser;
+          app.logger.info({ userId: user.id }, 'Existing user verified');
+        } else {
+          const [newUser] = await app.db.insert(schema.users).values({
+            email,
+            phone: '',
+            name: name || 'Utilisateur',
+            walletBalance: 0,
+            isVerified: true,
+            isActive: true,
+          }).returning();
+          user = newUser;
+          isNewUser = true;
+          app.logger.info({ userId: user.id }, 'New user created');
+        }
       }
 
       // Create or get Better Auth user
+      const authEmail = email || phone || user.email;
       let authUser = await app.db.query.user.findFirst({
-        where: eq(authSchema.user.email, phone),
+        where: eq(authSchema.user.email, authEmail),
       });
 
       if (!authUser) {
         const [newAuthUser] = await app.db.insert(authSchema.user).values({
           id: `user_${user.id}`,
           name: name || 'Utilisateur',
-          email: phone,
+          email: authEmail,
           emailVerified: true,
         }).returning();
         authUser = newAuthUser;
@@ -218,19 +262,19 @@ export function registerAuthRoutes(app: App) {
       app.logger.info({ userId: user.id }, 'Session created');
 
       return {
-        token: sessionToken,
+        success: true,
         user: {
-          id: user.id,
+          id: String(user.id),
           phone: user.phone,
+          email: user.email,
           name: user.name,
-          avatarUrl: user.avatarUrl,
-          walletBalance: user.walletBalance,
-          isVerified: user.isVerified,
+          avatar_url: user.avatarUrl,
+          wallet_balance: user.walletBalance,
+          is_verified: user.isVerified,
         },
-        is_new_user: isNewUser,
       };
     } catch (error) {
-      app.logger.error({ err: error, phone }, 'Failed to verify OTP');
+      app.logger.error({ err: error, phone, email }, 'Failed to verify OTP');
       return reply.status(400).send({ error: 'Failed to verify OTP' });
     }
   });

@@ -144,6 +144,102 @@ export function registerUserRoutes(app: App) {
     }
   });
 
+  // Get user stats
+  app.fastify.get('/api/users/me/stats', {
+    schema: {
+      description: 'Get current user statistics',
+      tags: ['users'],
+      response: {
+        200: {
+          type: 'object',
+          properties: {
+            total_groups: { type: 'integer' },
+            total_contributions: { type: 'integer' },
+            total_contributed_amount: { type: 'integer' },
+            wallet_balance: { type: 'integer' },
+          },
+        },
+        401: {
+          type: 'object',
+          properties: {
+            error: { type: 'string' },
+          },
+        },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const session = await requireAuth(request, reply);
+    if (!session) return;
+
+    let userId: string | null = null;
+
+    // OTP users: auth user ID format is "user_<uuid>"
+    if (session.user.id.startsWith('user_')) {
+      userId = session.user.id.substring(5);
+    } else if (session.user.email) {
+      // Better Auth users: look up by email
+      let user = await app.db.query.users.findFirst({
+        where: eq(schema.users.email, session.user.email),
+      });
+
+      if (!user) {
+        const [newUser] = await app.db.insert(schema.users).values({
+          phone: '',
+          name: session.user.name || 'User',
+          email: session.user.email,
+          avatarUrl: session.user.image,
+          walletBalance: 0,
+          isVerified: true,
+          isActive: true,
+        }).returning();
+        user = newUser;
+      }
+
+      userId = user?.id || null;
+    }
+
+    if (!userId) {
+      return reply.status(401).send({ error: 'User not found' });
+    }
+
+    app.logger.info({ userId }, 'Fetching user stats');
+
+    try {
+      // Count groups where user is a member
+      const groupMembers = await app.db.query.groupMembers.findMany({
+        where: eq(schema.groupMembers.userId, userId as any),
+      });
+      const totalGroups = groupMembers.length;
+
+      // Get contributions for user
+      const userContributions = await app.db.query.contributions.findMany({
+        where: eq(schema.contributions.userId, userId as any),
+      });
+      const totalContributions = userContributions.length;
+
+      // Sum contributions where status is paid
+      const totalContributedAmount = userContributions
+        .filter(c => c.status === 'paid')
+        .reduce((sum, c) => sum + c.amount, 0);
+
+      // Get wallet balance
+      const user = await app.db.query.users.findFirst({
+        where: eq(schema.users.id, userId as any),
+      });
+      const walletBalance = user?.walletBalance || 0;
+
+      return {
+        total_groups: totalGroups,
+        total_contributions: totalContributions,
+        total_contributed_amount: totalContributedAmount,
+        wallet_balance: walletBalance,
+      };
+    } catch (error) {
+      app.logger.error({ err: error, userId }, 'Failed to fetch user stats');
+      return reply.status(400).send({ error: 'Failed to fetch user stats' });
+    }
+  });
+
   // Update user
   app.fastify.put('/api/users/me', {
     schema: {

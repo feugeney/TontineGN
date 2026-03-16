@@ -111,7 +111,7 @@ export function registerContributionRoutes(app: App) {
 
       app.logger.info({ contributionId: contribution.id }, 'Contribution created');
 
-      reply.status(201);
+      reply.code(201);
       return {
         contribution: {
           id: String(contribution.id),
@@ -187,6 +187,87 @@ export function registerContributionRoutes(app: App) {
     } catch (error) {
       app.logger.error({ err: error }, 'Failed to fetch contributions');
       return reply.status(400).send({ error: 'Failed to fetch contributions' });
+    }
+  });
+
+  // GET /api/contributions/upcoming
+  app.fastify.get('/api/contributions/upcoming', {
+    schema: {
+      description: 'Get upcoming contributions for authenticated user',
+      tags: ['contributions'],
+      response: {
+        200: { type: 'object', properties: { contributions: { type: 'array' } } },
+        401: { type: 'object', properties: { error: { type: 'string' } } },
+      },
+    },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const session = await requireAuth(request, reply);
+    if (!session) return;
+
+    let userId: string | null = null;
+
+    // OTP users: auth user ID format is "user_<uuid>"
+    if (session.user.id.startsWith('user_')) {
+      userId = session.user.id.substring(5);
+    } else if (session.user.email) {
+      // Better Auth users: look up by email
+      let user = await app.db.query.users.findFirst({
+        where: eq(schema.users.email, session.user.email),
+      });
+
+      // Create custom user from Better Auth data if needed
+      if (!user) {
+        const [newUser] = await app.db.insert(schema.users).values({
+          phone: '',
+          name: session.user.name || 'User',
+          email: session.user.email,
+          avatarUrl: session.user.image,
+          walletBalance: 0,
+          isVerified: true,
+          isActive: true,
+        }).returning();
+        user = newUser;
+      }
+
+      userId = user?.id || null;
+    }
+
+    if (!userId) {
+      return reply.status(401).send({ error: 'User not found' });
+    }
+
+    app.logger.info({ userId }, 'Fetching upcoming contributions');
+
+    try {
+      // Get pending contributions with due_date >= NOW(), ordered by due_date, limit 10
+      const contributions = await app.db.query.contributions.findMany({
+        where: eq(schema.contributions.userId, userId as any),
+      });
+
+      const now = new Date();
+      const upcomingContributions = contributions
+        .filter(c => c.status === 'pending' && c.dueDate && new Date(c.dueDate) >= now)
+        .sort((a, b) => {
+          const dateA = a.dueDate ? new Date(a.dueDate).getTime() : 0;
+          const dateB = b.dueDate ? new Date(b.dueDate).getTime() : 0;
+          return dateA - dateB;
+        })
+        .slice(0, 10)
+        .map(c => ({
+          id: String(c.id),
+          groupId: String(c.groupId),
+          userId: String(c.userId),
+          amount: c.amount,
+          paymentMethod: c.paymentMethod,
+          status: c.status,
+          dueDate: c.dueDate?.toISOString(),
+          createdAt: c.createdAt.toISOString(),
+        }));
+
+      return { contributions: upcomingContributions };
+    } catch (error) {
+      app.logger.error({ err: error, userId }, 'Failed to fetch upcoming contributions');
+      return reply.status(400).send({ error: 'Failed to fetch upcoming contributions' });
     }
   });
 }
