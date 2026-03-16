@@ -46,7 +46,6 @@ export function registerWalletRoutes(app: App) {
           type: 'object',
           properties: {
             balance: { type: 'number' },
-            currency: { type: 'string' },
           },
         },
         401: {
@@ -64,11 +63,29 @@ export function registerWalletRoutes(app: App) {
     app.logger.info({ userId: session.user.id }, 'Fetching wallet balance');
 
     try {
-      const user = await ensureUserExists(app, session.user.id, session.user);
+      let user;
+
+      // OTP users: auth user ID format is "user_<uuid>"
+      if (session.user.id.startsWith('user_')) {
+        const customUserId = session.user.id.substring(5);
+        user = await app.db.query.users.findFirst({
+          where: eq(schema.users.id, customUserId as any),
+        });
+      }
+
+      // Better Auth users: look up by email
+      if (!user && session.user.email) {
+        user = await app.db.query.users.findFirst({
+          where: eq(schema.users.email, session.user.email),
+        });
+      }
+
+      if (!user) {
+        user = await ensureUserExists(app, session.user.id, session.user);
+      }
 
       return {
-        balance: user.walletBalance || 0,
-        currency: 'GNF',
+        balance: user?.walletBalance || 0,
       };
     } catch (error) {
       app.logger.error({ err: error, userId: session.user.id }, 'Failed to fetch balance');
@@ -133,7 +150,7 @@ export function registerWalletRoutes(app: App) {
 
       // Create transaction atomically
       const [transaction] = await app.db.insert(schema.transactions).values({
-        userId: session.user.id as any,
+        userId: user.id as any,
         type: 'deposit',
         amount: Math.floor(amount),
         balanceBefore: user.walletBalance,
@@ -148,7 +165,7 @@ export function registerWalletRoutes(app: App) {
       // Update wallet balance
       const [updatedUser] = await app.db.update(schema.users)
         .set({ walletBalance: user.walletBalance + Math.floor(amount) })
-        .where(eq(schema.users.id, session.user.id))
+        .where(eq(schema.users.id, user.id))
         .returning();
 
       app.logger.info({ userId: session.user.id, transactionId: transaction.id, amount }, 'Deposit completed');
@@ -229,7 +246,7 @@ export function registerWalletRoutes(app: App) {
       const providerReference = generateProviderReference(paymentMethod);
 
       const [transaction] = await app.db.insert(schema.transactions).values({
-        userId: session.user.id as any,
+        userId: user.id as any,
         type: 'withdrawal',
         amount: withdrawAmount,
         balanceBefore: user.walletBalance,
@@ -244,7 +261,7 @@ export function registerWalletRoutes(app: App) {
       // Update wallet balance
       const [updatedUser] = await app.db.update(schema.users)
         .set({ walletBalance: user.walletBalance - withdrawAmount })
-        .where(eq(schema.users.id, session.user.id))
+        .where(eq(schema.users.id, user.id))
         .returning();
 
       app.logger.info({ userId: session.user.id, transactionId: transaction.id, amount }, 'Withdrawal completed');
@@ -324,7 +341,7 @@ export function registerWalletRoutes(app: App) {
         return reply.status(400).send({ error: 'Recipient not found' });
       }
 
-      if (recipient.id === session.user.id) {
+      if (recipient.id === user.id) {
         return reply.status(400).send({ error: 'Cannot send to yourself' });
       }
 
@@ -337,7 +354,7 @@ export function registerWalletRoutes(app: App) {
       const reference = generateTransactionReference();
 
       const [sendTxn] = await app.db.insert(schema.transactions).values({
-        userId: session.user.id as any,
+        userId: user.id as any,
         type: 'send',
         amount: sendAmount,
         balanceBefore: user.walletBalance,
@@ -357,13 +374,13 @@ export function registerWalletRoutes(app: App) {
         status: 'completed',
         reference,
         description: note || `Transfer from ${user.name}`,
-        relatedUserId: session.user.id as any,
+        relatedUserId: user.id as any,
       }).returning();
 
       // Update both users' balances
       await app.db.update(schema.users)
         .set({ walletBalance: user.walletBalance - sendAmount })
-        .where(eq(schema.users.id, session.user.id));
+        .where(eq(schema.users.id, user.id));
 
       await app.db.update(schema.users)
         .set({ walletBalance: recipient.walletBalance + sendAmount })
@@ -424,7 +441,24 @@ export function registerWalletRoutes(app: App) {
     app.logger.info({ userId: session.user.id, page, limit }, 'Fetching transactions');
 
     try {
-      let conditions = [eq(schema.transactions.userId, session.user.id)];
+      let customUserId: string | null = null;
+
+      // OTP users: auth user ID format is "user_<uuid>"
+      if (session.user.id.startsWith('user_')) {
+        customUserId = session.user.id.substring(5);
+      } else if (session.user.email) {
+        // Better Auth users: look up by email
+        const user = await app.db.query.users.findFirst({
+          where: eq(schema.users.email, session.user.email),
+        });
+        customUserId = user?.id || null;
+      }
+
+      if (!customUserId) {
+        return { transactions: [], total: 0, page };
+      }
+
+      let conditions = [eq(schema.transactions.userId, customUserId as any)];
       if (query.type) {
         conditions.push(eq(schema.transactions.type, query.type));
       }

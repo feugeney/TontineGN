@@ -25,7 +25,20 @@ export async function api(
   path: string,
   options?: RequestInit
 ): Promise<Response> {
-  return fetch(`${BASE_URL}${path}`, sanitizeOptions(options));
+  const sanitized = sanitizeOptions(options);
+  const headers: Record<string, string> = {
+    ...sanitized?.headers as Record<string, string>,
+  };
+
+  // Add Content-Type if there's a body but no Content-Type header
+  if (sanitized?.body && !headers['content-type'] && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  return fetch(`${BASE_URL}${path}`, {
+    ...sanitized,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
+  });
 }
 
 /**
@@ -37,12 +50,19 @@ export async function authenticatedApi(
   options?: RequestInit
 ): Promise<Response> {
   const sanitized = sanitizeOptions(options);
+  const headers: Record<string, string> = {
+    ...sanitized?.headers as Record<string, string>,
+    Authorization: `Bearer ${token}`,
+  };
+
+  // Add Content-Type if there's a body but no Content-Type header
+  if (sanitized?.body && !headers['content-type'] && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   return fetch(`${BASE_URL}${path}`, {
     ...sanitized,
-    headers: {
-      ...sanitized?.headers,
-      Authorization: `Bearer ${token}`,
-    },
+    headers,
   });
 }
 

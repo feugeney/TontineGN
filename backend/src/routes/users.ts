@@ -50,7 +50,18 @@ export function registerUserRoutes(app: App) {
           description: 'Current user',
           type: 'object',
           properties: {
-            user: { type: 'object' },
+            user: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                phone: { type: 'string' },
+                email: { type: 'string' },
+                name: { type: 'string' },
+                avatarUrl: { type: 'string' },
+                walletBalance: { type: 'integer' },
+                isVerified: { type: 'boolean' },
+              },
+            },
           },
         },
         401: {
@@ -67,17 +78,57 @@ export function registerUserRoutes(app: App) {
 
     app.logger.info({ userId: session.user.id }, 'Fetching user profile');
 
-    return {
-      user: {
-        id: session.user.id,
-        name: session.user.name,
-        email: session.user.email,
-        emailVerified: session.user.emailVerified,
-        image: session.user.image,
-        createdAt: session.user.createdAt,
-        updatedAt: session.user.updatedAt,
-      },
-    };
+    try {
+      let user;
+
+      // OTP users: auth user ID format is "user_<uuid>"
+      if (session.user.id.startsWith('user_')) {
+        const customUserId = session.user.id.substring(5);
+        user = await app.db.query.users.findFirst({
+          where: eq(schema.users.id, customUserId),
+        });
+      }
+
+      // Better Auth users: look up by email
+      if (!user && session.user.email) {
+        user = await app.db.query.users.findFirst({
+          where: eq(schema.users.email, session.user.email),
+        });
+
+        // Create custom user from Better Auth data if needed
+        if (!user) {
+          app.logger.info({ email: session.user.email }, 'Creating custom user from Better Auth data');
+          const [newUser] = await app.db.insert(schema.users).values({
+            phone: '',
+            email: session.user.email,
+            name: session.user.name || 'User',
+            walletBalance: 0,
+            isVerified: true,
+            isActive: true,
+          }).returning();
+          user = newUser;
+        }
+      }
+
+      if (!user) {
+        return reply.status(401).send({ error: 'Unauthorized' });
+      }
+
+      return {
+        user: {
+          id: user.id,
+          phone: user.phone,
+          email: user.email,
+          name: user.name,
+          avatarUrl: user.avatarUrl,
+          walletBalance: user.walletBalance,
+          isVerified: user.isVerified,
+        },
+      };
+    } catch (error) {
+      app.logger.error({ err: error, userId: session.user.id }, 'Failed to fetch user');
+      return reply.status(400).send({ error: 'Failed to fetch user' });
+    }
   });
 
   // Update user
@@ -117,24 +168,39 @@ export function registerUserRoutes(app: App) {
     app.logger.info({ userId: session.user.id, name, email }, 'Updating user profile');
 
     try {
-      // Ensure user exists
-      let user = await app.db.query.users.findFirst({
-        where: eq(schema.users.id, session.user.id),
-      });
+      let user;
+
+      // OTP users: auth user ID format is "user_<uuid>"
+      if (session.user.id.startsWith('user_')) {
+        const customUserId = session.user.id.substring(5);
+        user = await app.db.query.users.findFirst({
+          where: eq(schema.users.id, customUserId),
+        });
+      }
+
+      // Better Auth users: look up by email
+      if (!user && session.user.email) {
+        user = await app.db.query.users.findFirst({
+          where: eq(schema.users.email, session.user.email),
+        });
+
+        // Create custom user from Better Auth data if needed
+        if (!user) {
+          app.logger.info({ email: session.user.email }, 'Creating custom user from Better Auth data');
+          const [newUser] = await app.db.insert(schema.users).values({
+            phone: '',
+            email: session.user.email,
+            name: session.user.name || 'User',
+            walletBalance: 0,
+            isVerified: true,
+            isActive: true,
+          }).returning();
+          user = newUser;
+        }
+      }
 
       if (!user) {
-        // Create user if doesn't exist
-        const [newUser] = await app.db.insert(schema.users).values({
-          id: session.user.id as any,
-          phone: '',
-          name: session.user.name || 'User',
-          email: session.user.email,
-          avatarUrl: session.user.image,
-          walletBalance: 0,
-          isVerified: session.user.emailVerified || false,
-          isActive: true,
-        }).returning();
-        user = newUser;
+        return reply.status(401).send({ error: 'Unauthorized' });
       }
 
       const updates: Record<string, any> = { updatedAt: new Date() };
@@ -143,7 +209,7 @@ export function registerUserRoutes(app: App) {
 
       const [updated] = await app.db.update(schema.users)
         .set(updates)
-        .where(eq(schema.users.id, session.user.id))
+        .where(eq(schema.users.id, user.id))
         .returning();
 
       app.logger.info({ userId: session.user.id }, 'User profile updated');
@@ -267,29 +333,44 @@ export function registerUserRoutes(app: App) {
         return reply.status(400).send({ error: 'PIN must be 4 digits' });
       }
 
-      // Ensure user exists
-      let user = await app.db.query.users.findFirst({
-        where: eq(schema.users.id, session.user.id),
-      });
+      let user;
+
+      // OTP users: auth user ID format is "user_<uuid>"
+      if (session.user.id.startsWith('user_')) {
+        const customUserId = session.user.id.substring(5);
+        user = await app.db.query.users.findFirst({
+          where: eq(schema.users.id, customUserId),
+        });
+      }
+
+      // Better Auth users: look up by email
+      if (!user && session.user.email) {
+        user = await app.db.query.users.findFirst({
+          where: eq(schema.users.email, session.user.email),
+        });
+
+        // Create custom user from Better Auth data if needed
+        if (!user) {
+          const [newUser] = await app.db.insert(schema.users).values({
+            phone: '',
+            email: session.user.email,
+            name: session.user.name || 'User',
+            walletBalance: 0,
+            isVerified: true,
+            isActive: true,
+          }).returning();
+          user = newUser;
+        }
+      }
 
       if (!user) {
-        const [newUser] = await app.db.insert(schema.users).values({
-          id: session.user.id as any,
-          phone: '',
-          name: session.user.name || 'User',
-          email: session.user.email,
-          avatarUrl: session.user.image,
-          walletBalance: 0,
-          isVerified: session.user.emailVerified || false,
-          isActive: true,
-        }).returning();
-        user = newUser;
+        return reply.status(401).send({ error: 'Unauthorized' });
       }
 
       const pinHash = hashPin(pin);
       await app.db.update(schema.users)
         .set({ pinHash })
-        .where(eq(schema.users.id, session.user.id));
+        .where(eq(schema.users.id, user.id));
 
       app.logger.info({ userId: session.user.id }, 'PIN set successfully');
 
