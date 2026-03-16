@@ -1,0 +1,21 @@
+import { Stack } from "expo-router";
+import { COLORS } from "@/constants/Colors";
+
+export default function HomeLayout() {
+  return (
+    <Stack
+      screenOptions={{
+        headerTransparent: false,
+        headerStyle: { backgroundColor: COLORS.background },
+        headerTitleStyle: {
+          fontFamily: "Nunito_700Bold",
+          fontSize: 18,
+          color: COLORS.text,
+        },
+        headerBackButtonDisplayMode: "minimal",
+      }}
+    >
+      <Stack.Screen name="index" options={{ headerShown: false }} />
+    </Stack>
+  );
+}
