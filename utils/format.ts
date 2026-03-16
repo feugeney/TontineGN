@@ -1,9 +1,9 @@
 export function formatGNF(amount: number): string {
-  const num = Number(amount) || 0;
-  return new Intl.NumberFormat('fr-FR', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(num) + ' GNF';
+  // Hermes (React Native) does not support GNF as a currency code in Intl.NumberFormat
+  // Format manually: space-separated thousands + GNF suffix
+  const rounded = Math.round(Number(amount) || 0);
+  const formatted = rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return `${formatted} GNF`;
 }
 
 export function formatPhone(phone: string): string {
