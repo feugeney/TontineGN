@@ -19,9 +19,8 @@ describe("API Integration Tests", () => {
     const res = await authenticatedApi("/api/users/me", authToken);
     await expectStatus(res, 200);
     const data = await res.json();
-    expect(data.user).toBeDefined();
-    expect(data.user.id).toBeDefined();
-    expect(data.user.phone).toBeDefined();
+    expect(data.id).toBeDefined();
+    expect(data.phone).toBeDefined();
   });
 
   test("Get current user without authentication returns 401", async () => {
