@@ -17,11 +17,11 @@ interface VerifyOtpBody {
 export function registerOtpRoutes(app: App) {
   const requireAuth = app.requireAuth();
 
-  // POST /api/otp/send
-  app.fastify.post('/api/otp/send', {
+  // POST /api/auth/send-otp
+  app.fastify.post('/api/auth/send-otp', {
     schema: {
       description: 'Send OTP code to phone number',
-      tags: ['otp'],
+      tags: ['auth'],
       body: {
         type: 'object',
         required: ['phone'],
@@ -34,9 +34,7 @@ export function registerOtpRoutes(app: App) {
           description: 'OTP sent successfully',
           type: 'object',
           properties: {
-            success: { type: 'boolean' },
             message: { type: 'string' },
-            expires_in: { type: 'integer' },
           },
         },
         400: {
@@ -57,18 +55,18 @@ export function registerOtpRoutes(app: App) {
         return reply.status(400).send({ error: 'Phone number is required' });
       }
 
-      // Determine OTP code
-      let code: string;
-      if (phone.startsWith('+224620000')) {
-        code = '123456';
-      } else {
-        code = Math.random().toString().slice(2, 8);
-      }
+      // Delete any existing unused OTP for this phone
+      await app.db.delete(schema.otpCodes)
+        .where(and(
+          eq(schema.otpCodes.phone, phone),
+          eq(schema.otpCodes.used, false)
+        ));
 
-      // Calculate expiration time (10 minutes from now)
+      // Create new OTP code (always 123456 for testing)
+      const code = '123456';
       const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
-      // Insert OTP record
+      // Insert new OTP record
       await app.db.insert(schema.otpCodes).values({
         phone,
         code,
@@ -79,9 +77,7 @@ export function registerOtpRoutes(app: App) {
       app.logger.info({ phone, code }, 'OTP code sent');
 
       return {
-        success: true,
-        message: 'Code envoyé',
-        expires_in: 600,
+        message: 'OTP sent successfully',
       };
     } catch (error) {
       app.logger.error({ err: error, phone }, 'Failed to send OTP');
@@ -89,8 +85,8 @@ export function registerOtpRoutes(app: App) {
     }
   });
 
-  // POST /api/otp/verify
-  app.fastify.post('/api/otp/verify', {
+  // POST /api/auth/verify-otp
+  app.fastify.post('/api/auth/verify-otp', {
     schema: {
       description: 'Verify OTP code and create session',
       tags: ['otp'],
@@ -151,14 +147,14 @@ export function registerOtpRoutes(app: App) {
       });
 
       // Check if OTP exists and is valid
-      if (!otp || (otp.code !== code && !(phone.startsWith('+224620000') && code === '123456'))) {
+      if (!otp || otp.code !== code) {
         app.logger.warn({ phone }, 'Invalid or expired OTP code');
-        return reply.status(400).send({ error: 'Code invalide ou expiré' });
+        return reply.status(400).send({ error: 'Invalid or expired OTP' });
       }
 
       if (new Date() > otp.expiresAt) {
         app.logger.warn({ phone }, 'OTP code expired');
-        return reply.status(400).send({ error: 'Code invalide ou expiré' });
+        return reply.status(400).send({ error: 'Invalid or expired OTP' });
       }
 
       // Mark OTP as used
@@ -179,7 +175,7 @@ export function registerOtpRoutes(app: App) {
         // Create new user (id will be auto-generated as UUID)
         const [newUser] = await app.db.insert(schema.users).values({
           phone,
-          name: name || 'Utilisateur',
+          name: phone,
           walletBalance: 0,
           isVerified: true,
           isActive: true,
@@ -273,29 +269,28 @@ export function registerOtpRoutes(app: App) {
     const session = await requireAuth(request, reply);
     if (!session) return;
 
-    const userId = session.user.id;
-    app.logger.info({ userId }, 'Fetching user profile');
+    const authEmail = session.user.email || '';
+    app.logger.info({ authEmail }, 'Fetching user profile');
 
     try {
-      // Try to get user from custom users table using query API
+      // Try to get user from custom users table by email
       let user = await app.db.query.users.findFirst({
-        where: eq(schema.users.id, userId),
+        where: eq(schema.users.email, authEmail),
       });
 
-      // If user doesn't exist in custom table but exists in Better Auth, create them
-      // Generate a new UUID for the custom user (Better Auth IDs are text strings, not UUIDs)
+      // If user doesn't exist in custom table, create them from Better Auth data
       if (!user) {
-        app.logger.info({ userId, authEmail: session.user.email }, 'User not found in custom table, creating from Better Auth data');
+        app.logger.info({ authEmail }, 'User not found in custom table, creating from Better Auth data');
         const [newUser] = await app.db.insert(schema.users).values({
           phone: '',
-          email: session.user.email || '',
+          email: authEmail,
           name: session.user.name || 'User',
           walletBalance: 0,
           isVerified: true,
           isActive: true,
         }).returning();
         user = newUser;
-        app.logger.info({ userId: user.id, authEmail: session.user.email }, 'Custom user created');
+        app.logger.info({ userId: user.id, authEmail }, 'Custom user created');
       }
 
       app.logger.info({ userId: user.id }, 'User profile retrieved');
@@ -314,7 +309,7 @@ export function registerOtpRoutes(app: App) {
         },
       };
     } catch (error) {
-      app.logger.error({ err: error, userId, authUser: session.user?.email }, 'Failed to fetch user');
+      app.logger.error({ err: error, authEmail }, 'Failed to fetch user');
       return reply.status(400).send({ error: 'Failed to fetch user' });
     }
   });
