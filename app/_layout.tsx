@@ -43,6 +43,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     } else if (user && inAuth) {
       router.replace("/(tabs)/(home)");
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, loading, segments]);
 
   if (loading) {

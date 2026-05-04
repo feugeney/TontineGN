@@ -66,6 +66,7 @@ export default function ProfileScreen() {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useFocusEffect(useCallback(() => { loadStats(); refreshUser().catch(() => {}); }, []));
 
   const handleLogout = () => {
