@@ -7,6 +7,7 @@ describe("API Integration Tests", () => {
   let userId: string;
   let groupId: string;
   let notificationId: string;
+  let otpCode: string;
 
   // ========== Auth & User Setup ==========
   test("Sign up test user", async () => {
@@ -16,6 +17,81 @@ describe("API Integration Tests", () => {
     expect(authToken).toBeDefined();
     expect(user).toBeDefined();
     expect(user.id).toBeDefined();
+  });
+
+  // ========== OTP Auth Endpoints ==========
+  test("Send OTP to phone", async () => {
+    const res = await api("/api/otp-auth/send-otp", {
+      method: "POST",
+      body: JSON.stringify({
+        phone: "+237671234567"
+      })
+    });
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(data.message).toBeDefined();
+    expect(data.otp_code).toBeDefined();
+    otpCode = data.otp_code;
+  });
+
+  test("Send OTP to email", async () => {
+    const res = await api("/api/otp-auth/send-otp", {
+      method: "POST",
+      body: JSON.stringify({
+        email: "otp-test@example.com"
+      })
+    });
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(data.message).toBeDefined();
+    expect(data.otp_code).toBeDefined();
+  });
+
+  test("Send OTP without phone or email returns 400", async () => {
+    const res = await api("/api/otp-auth/send-otp", {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+    await expectStatus(res, 400);
+  });
+
+  test("Verify OTP with valid code", async () => {
+    const res = await api("/api/otp-auth/verify-otp", {
+      method: "POST",
+      body: JSON.stringify({
+        phone: "+237671234567",
+        code: otpCode,
+        name: "OTP Test User"
+      })
+    });
+    await expectStatus(res, 200);
+    const data = await res.json();
+    expect(data.token).toBeDefined();
+    expect(data.user).toBeDefined();
+    expect(data.is_new_user).toBeDefined();
+  });
+
+  test("Verify OTP without required code returns 400", async () => {
+    const res = await api("/api/otp-auth/verify-otp", {
+      method: "POST",
+      body: JSON.stringify({
+        phone: "+237671234567"
+      })
+    });
+    await expectStatus(res, 400);
+  });
+
+  test("Verify OTP with invalid code returns 400", async () => {
+    const res = await api("/api/otp-auth/verify-otp", {
+      method: "POST",
+      body: JSON.stringify({
+        phone: "+237671234567",
+        code: "000000"
+      })
+    });
+    await expectStatus(res, 400);
   });
 
   // ========== User Endpoints ==========
