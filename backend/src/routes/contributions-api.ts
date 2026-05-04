@@ -111,8 +111,7 @@ export function registerContributionRoutes(app: App) {
 
       app.logger.info({ contributionId: contribution.id }, 'Contribution created');
 
-      reply.code(201);
-      return {
+      const response = {
         contribution: {
           id: String(contribution.id),
           groupId: String(contribution.groupId),
@@ -123,6 +122,9 @@ export function registerContributionRoutes(app: App) {
           createdAt: contribution.createdAt.toISOString(),
         },
       };
+
+      reply.status(201);
+      return response;
     } catch (error) {
       app.logger.error({ err: error }, 'Failed to create contribution');
       return reply.status(400).send({ error: 'Failed to create contribution' });

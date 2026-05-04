@@ -108,7 +108,9 @@ export function registerGroupRoutes(app: App) {
         hasReceivedPayout: false,
       });
 
-      const responseData = {
+      app.logger.info({ groupId: String(group.id) }, 'Sending group response');
+
+      const response = {
         group: {
           id: String(group.id),
           name: group.name,
@@ -124,8 +126,8 @@ export function registerGroupRoutes(app: App) {
         },
       };
 
-      reply.code(201);
-      return responseData;
+      reply.status(201);
+      return response;
     } catch (error) {
       app.logger.error({ err: error }, 'Failed to create group');
       return reply.status(400).send({ error: 'Failed to create group' });

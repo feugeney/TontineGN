@@ -262,16 +262,17 @@ export function registerAuthRoutes(app: App) {
       app.logger.info({ userId: user.id }, 'Session created');
 
       return {
-        success: true,
+        token: sessionToken,
         user: {
           id: String(user.id),
           phone: user.phone,
           email: user.email,
           name: user.name,
-          avatar_url: user.avatarUrl,
-          wallet_balance: user.walletBalance,
-          is_verified: user.isVerified,
+          avatarUrl: user.avatarUrl,
+          walletBalance: user.walletBalance,
+          isVerified: user.isVerified,
         },
+        is_new_user: isNewUser,
       };
     } catch (error) {
       app.logger.error({ err: error, phone, email }, 'Failed to verify OTP');
